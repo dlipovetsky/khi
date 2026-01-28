@@ -16,8 +16,19 @@
 
 mkdir -p vendor
 cd vendor
-git clone --recursive https://github.com/google/woff2.git
+if [[ ! -d woff2 ]]; then
+  git clone --recursive https://github.com/google/woff2.git
+fi
 cd woff2
+# On macOS, set SDK and C++ include path so the compiler finds standard library headers (<map>, etc.)
+if [[ "$(uname)" == "Darwin" ]]; then
+  SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+  # C++ standard library headers are in the SDK under usr/include/c++/v1
+  CXX_INCLUDE="${SDK_PATH}/usr/include/c++/v1"
+  export CXX="clang++"
+  export CXXFLAGS="-isysroot ${SDK_PATH} -std=c++11 -I${CXX_INCLUDE}"
+  export LDFLAGS="-isysroot ${SDK_PATH}"
+fi
 make clean all
 cd ../..
 

@@ -56,11 +56,28 @@ func (b *FileFormTaskBuilder) WithDescription(description string) *FileFormTaskB
 func (b *FileFormTaskBuilder) Build(labelOpts ...common_task.LabelOpt) common_task.Task[upload.UploadResult] {
 	return common_task.NewTask(b.FormTaskBuilderBase.id, b.FormTaskBuilderBase.dependencies, func(ctx context.Context) (upload.UploadResult, error) {
 		metadata := khictx.MustGetValue(ctx, inspectioncore_contract.InspectionRunMetadata)
+		req := khictx.MustGetValue(ctx, inspectioncore_contract.InspectionTaskInput)
+		taskMode := khictx.MustGetValue(ctx, inspectioncore_contract.InspectionTaskMode)
 
 		token := upload.DefaultUploadFileStore.GetUploadToken(GenerateUploadIDWithTaskContext(ctx, b.FormTaskBuilderBase.id.ReferenceIDString()), b.verifier)
 		uploadResult, err := upload.DefaultUploadFileStore.GetResult(token)
 		if err != nil {
 			return upload.UploadResult{}, err
+		}
+		// In job mode, inspection values may provide a local file path instead of an HTTP upload.
+		if taskMode == inspectioncore_contract.TaskModeRun {
+			if pathVal, ok := req[b.FormTaskBuilderBase.id.ReferenceIDString()]; ok {
+				if pathStr, isString := pathVal.(string); isString && pathStr != "" {
+					err := upload.DefaultUploadFileStore.SetResultFromLocalPath(token, pathStr)
+					if err != nil {
+						return upload.UploadResult{}, fmt.Errorf("failed to use local file for task %s: %w", b.FormTaskBuilderBase.id, err)
+					}
+					uploadResult, err = upload.DefaultUploadFileStore.GetResult(token)
+					if err != nil {
+						return upload.UploadResult{}, err
+					}
+				}
+			}
 		}
 		field := inspectionmetadata.FileParameterFormField{
 			ParameterFormFieldBase: inspectionmetadata.ParameterFormFieldBase{
@@ -74,6 +91,10 @@ func (b *FileFormTaskBuilder) Build(labelOpts ...common_task.LabelOpt) common_ta
 		b.FormTaskBuilderBase.SetupBaseFormField(&field.ParameterFormFieldBase)
 
 		field = setFormHintsFromUploadResult(uploadResult, field)
+		if taskMode == inspectioncore_contract.TaskModeRun && uploadResult.Status == upload.UploadStatusWaiting {
+			return upload.UploadResult{}, fmt.Errorf("in job mode, inspection values must include a file path for this form: set %q to the path of your audit log file (e.g. --job-inspection-values '{\"%s\": \"/path/to/audit.log\"}')",
+				b.FormTaskBuilderBase.id.ReferenceIDString(), b.FormTaskBuilderBase.id.ReferenceIDString())
+		}
 		formFields, found := typedmap.Get(metadata, inspectionmetadata.FormFieldSetMetadataKey)
 		if !found {
 			return upload.UploadResult{}, fmt.Errorf("failed to get form fields from metadata")

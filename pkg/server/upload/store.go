@@ -17,6 +17,7 @@ package upload
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 )
 
@@ -158,6 +159,37 @@ func (s *UploadFileStore) SetResultOnCompletedUpload(token UploadToken, uploadEr
 				VerificationCount: nextVerificationIndex,
 			}
 		}()
+	}
+	return nil
+}
+
+// SetResultFromLocalPath copies a local file into the store and marks the result as completed.
+// This is used in job mode when inspection values provide a file path instead of an HTTP upload.
+// The store's StoreProvider must implement DirectWritableUploadFileStoreProvider.
+func (s *UploadFileStore) SetResultFromLocalPath(token UploadToken, localFilePath string) error {
+	err := s.ensureIssuedToken(token)
+	if err != nil {
+		return err
+	}
+	writable, ok := s.StoreProvider.(DirectWritableUploadFileStoreProvider)
+	if !ok {
+		return fmt.Errorf("store provider does not support writing (required for job mode file path)")
+	}
+	f, err := os.Open(localFilePath)
+	if err != nil {
+		return fmt.Errorf("open local file %s: %w", localFilePath, err)
+	}
+	defer f.Close()
+	err = writable.Write(token, f)
+	if err != nil {
+		return fmt.Errorf("write file to store: %w", err)
+	}
+	s.resultLock.Lock()
+	defer s.resultLock.Unlock()
+	s.results[token.GetID()] = UploadResult{
+		Token:         token,
+		StoreProvider: s.StoreProvider,
+		Status:        UploadStatusCompleted,
 	}
 	return nil
 }
