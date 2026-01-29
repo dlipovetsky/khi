@@ -18,11 +18,13 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -46,11 +48,12 @@ const embeddedStaticFolderPath = "dist/browser"
 var embeddedStaticFolder embed.FS
 
 type ServerConfig struct {
-	ViewerMode       bool
-	StaticFolderPath string
-	ResourceMonitor  ResourceMonitor
-	ServerBasePath   string
-	UploadFileStore  *upload.UploadFileStore
+	ViewerMode            bool
+	StaticFolderPath      string
+	ResourceMonitor       ResourceMonitor
+	ServerBasePath        string
+	UploadFileStore       *upload.UploadFileStore
+	DataDestinationFolder string
 }
 
 func redirectMiddleware(exactPath string, redirectTo string) gin.HandlerFunc {
@@ -111,36 +114,6 @@ func CreateKHIServer(engine *gin.Engine, inspectionServer *coreinspection.Inspec
 		router.GET("/api/v3/inspection/types", func(ctx *gin.Context) {
 			ctx.JSON(http.StatusOK, &GetInspectionTypesResponse{
 				Types: inspectionServer.GetAllInspectionTypes(),
-			})
-		})
-
-		// GET /api/v3/inspection
-		// Returns the all started inspections on the inspection server.
-		router.GET("/api/v3/inspection", func(ctx *gin.Context) {
-			inspections := inspectionServer.GetAllRunners()
-			responseInspections := map[string]SerializedMetadata{}
-			for _, inspection := range inspections {
-				if inspection.Started() {
-					md, err := inspection.GetCurrentMetadata()
-					if err != nil {
-						ctx.String(http.StatusInternalServerError, err.Error())
-						return
-					}
-
-					m, err := inspectionmetadata.GetSerializableSubsetMapFromMetadataSet(md, filter.NewEnabledFilter(inspectionmetadata.LabelKeyIncludedInTaskListFlag, false))
-					if err != nil {
-						ctx.String(http.StatusInternalServerError, err.Error())
-						return
-					}
-					responseInspections[inspection.ID] = m
-				}
-			}
-
-			ctx.JSON(http.StatusOK, &GetInspectionsResponse{
-				Inspections: responseInspections,
-				ServerStat: &ServerStat{
-					TotalMemoryAvailable: serverConfig.ResourceMonitor.GetUsedMemory(),
-				},
 			})
 		})
 
@@ -299,31 +272,82 @@ func CreateKHIServer(engine *gin.Engine, inspectionServer *coreinspection.Inspec
 			}
 			ctx.String(http.StatusOK, "ok")
 		})
+	}
 
-		router.GET("/api/v3/inspection/:inspectionID/metadata", func(ctx *gin.Context) {
-			inspectionID := ctx.Param("inspectionID")
-			currentTask := inspectionServer.GetInspection(inspectionID)
-			if currentTask == nil {
-				ctx.String(http.StatusNotFound, fmt.Sprintf("inspecton %s was not found", inspectionID))
-				return
+	// GET /api/v3/inspection - available in both viewer and non-viewer mode.
+	// Returns inspections from running tasks and/or .khi files in the data destination folder.
+	// In viewer mode only file-based inspections are returned.
+	router.GET("/api/v3/inspection", func(ctx *gin.Context) {
+		responseInspections := map[string]SerializedMetadata{}
+		if !serverConfig.ViewerMode {
+			inspections := inspectionServer.GetAllRunners()
+			for _, inspection := range inspections {
+				if inspection.Started() {
+					md, err := inspection.GetCurrentMetadata()
+					if err != nil {
+						ctx.String(http.StatusInternalServerError, err.Error())
+						return
+					}
+
+					m, err := inspectionmetadata.GetSerializableSubsetMapFromMetadataSet(md, filter.NewEnabledFilter(inspectionmetadata.LabelKeyIncludedInTaskListFlag, false))
+					if err != nil {
+						ctx.String(http.StatusInternalServerError, err.Error())
+						return
+					}
+					responseInspections[inspection.ID] = m
+				}
 			}
+		}
+		if serverConfig.DataDestinationFolder != "" {
+			fileInspections, err := listInspectionsFromDataDestination(serverConfig.DataDestinationFolder)
+			if err != nil {
+				slog.Debug("Listing .khi files in data destination failed", "folder", serverConfig.DataDestinationFolder, "error", err)
+			} else {
+				for id, meta := range fileInspections {
+					if _, exists := responseInspections[id]; !exists {
+						responseInspections[id] = meta
+					}
+				}
+			}
+		}
+
+		ctx.JSON(http.StatusOK, &GetInspectionsResponse{
+			Inspections: responseInspections,
+			ServerStat: &ServerStat{
+				TotalMemoryAvailable: serverConfig.ResourceMonitor.GetUsedMemory(),
+			},
+		})
+	})
+
+	// GET /api/v3/inspection/:inspectionID/metadata - available in both modes; falls back to file-based inspection when no runner.
+	router.GET("/api/v3/inspection/:inspectionID/metadata", func(ctx *gin.Context) {
+		inspectionID := ctx.Param("inspectionID")
+		currentTask := inspectionServer.GetInspection(inspectionID)
+		if currentTask != nil {
 			result, err := currentTask.Metadata()
 			if err != nil {
 				ctx.String(http.StatusBadRequest, err.Error())
 				return
 			}
 			ctx.JSON(http.StatusOK, result)
-		})
-
-		router.GET("/api/v3/inspection/:inspectionID/data", func(ctx *gin.Context) {
-			inspectionID := ctx.Param("inspectionID")
-			currentTask := inspectionServer.GetInspection(inspectionID)
-			if currentTask == nil {
-				ctx.String(http.StatusNotFound, fmt.Sprintf("inspecton %s was not found", inspectionID))
+			return
+		}
+		// Fall back to file-based inspection (viewer mode or completed .khi file).
+		if serverConfig.DataDestinationFolder != "" {
+			meta, err := metadataForFileBasedInspection(serverConfig.DataDestinationFolder, inspectionID)
+			if err == nil {
+				ctx.JSON(http.StatusOK, meta)
 				return
 			}
+		}
+		ctx.String(http.StatusNotFound, fmt.Sprintf("inspection %s was not found", inspectionID))
+	})
 
-			// parse range queries
+	// GET /api/v3/inspection/:inspectionID/data - available in both modes; falls back to serving .khi file when no runner.
+	router.GET("/api/v3/inspection/:inspectionID/data", func(ctx *gin.Context) {
+		inspectionID := ctx.Param("inspectionID")
+		currentTask := inspectionServer.GetInspection(inspectionID)
+		if currentTask != nil {
 			var rangeStart int64
 			var maxSize int64 = math.MaxInt64
 			startQueryStr := ctx.Query("start")
@@ -344,7 +368,6 @@ func CreateKHIServer(engine *gin.Engine, inspectionServer *coreinspection.Inspec
 					return
 				}
 			}
-
 			result, err := currentTask.Result()
 			if err != nil {
 				ctx.String(http.StatusBadRequest, err.Error())
@@ -362,8 +385,39 @@ func CreateKHIServer(engine *gin.Engine, inspectionServer *coreinspection.Inspec
 				return
 			}
 			ctx.DataFromReader(http.StatusOK, min(maxSize, int64(fileSize)-rangeStart), "application/octet-stream", inspectionDataReader, map[string]string{})
-		})
+			return
+		}
+		// Fall back to file-based inspection: stream .khi file.
+		if serverConfig.DataDestinationFolder != "" {
+			var rangeStart int64
+			var maxSize int64 = math.MaxInt64
+			if startQueryStr := ctx.Query("start"); startQueryStr != "" {
+				var err error
+				rangeStart, err = strconv.ParseInt(startQueryStr, 10, 64)
+				if err != nil {
+					ctx.String(http.StatusBadRequest, err.Error())
+					return
+				}
+			}
+			if maxSizeQueryStr := ctx.Query("maxSize"); maxSizeQueryStr != "" {
+				var err error
+				maxSize, err = strconv.ParseInt(maxSizeQueryStr, 10, 64)
+				if err != nil {
+					ctx.String(http.StatusBadRequest, err.Error())
+					return
+				}
+			}
+			reader, contentLength, err := openInspectionDataFileRange(serverConfig.DataDestinationFolder, inspectionID, rangeStart, maxSize)
+			if err == nil {
+				defer reader.Close()
+				ctx.DataFromReader(http.StatusOK, contentLength, "application/octet-stream", reader, map[string]string{})
+				return
+			}
+		}
+		ctx.String(http.StatusNotFound, fmt.Sprintf("inspection %s was not found", inspectionID))
+	})
 
+	if !serverConfig.ViewerMode {
 		router.GET("/api/v3/popup", func(ctx *gin.Context) {
 			currentPopup := popup.Instance.GetCurrentPopup()
 			if currentPopup == nil {
@@ -466,4 +520,112 @@ func CreateKHIServer(engine *gin.Engine, inspectionServer *coreinspection.Inspec
 		})
 	}
 	return engine
+}
+
+// listInspectionsFromDataDestination returns a map of inspection ID to serialized metadata for each .khi file in the given folder.
+// The inspection ID is the filename without the ".khi" extension. Running inspections take precedence over file-based entries when merging.
+func listInspectionsFromDataDestination(dataDestinationFolder string) (map[string]SerializedMetadata, error) {
+	pattern := filepath.Join(dataDestinationFolder, "*.khi")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]SerializedMetadata, len(matches))
+	for _, p := range matches {
+		base := filepath.Base(p)
+		if !strings.HasSuffix(base, ".khi") {
+			continue
+		}
+		inspectionID := strings.TrimSuffix(base, ".khi")
+		if inspectionID == "" {
+			continue
+		}
+		var fileSize int
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() {
+			fileSize = int(info.Size())
+		}
+		suggestedFilename := base
+		result[inspectionID] = SerializedMetadata{
+			"header": map[string]any{
+				"inspectionType":         "",
+				"inspectionName":         inspectionID,
+				"inspectionTypeIconPath": "",
+				"startTimeUnixSeconds":   int64(0),
+				"endTimeUnixSeconds":     int64(0),
+				"inspectTimeUnixSeconds": int64(0),
+				"suggestedFilename":      suggestedFilename,
+				"fileSize":               fileSize,
+			},
+			"progress": map[string]any{
+				"phase": inspectionmetadata.TaskPhaseDone,
+				"totalProgress": map[string]any{
+					"id":            "Total",
+					"label":         "Total",
+					"message":      "",
+					"percentage":   float32(100),
+					"indeterminate": false,
+				},
+				"progresses": []any{},
+			},
+			"error": map[string]any{
+				"errorMessages": []any{},
+			},
+		}
+	}
+	return result, nil
+}
+
+// metadataForFileBasedInspection returns run-result metadata for a .khi file (minimal stub for viewer mode).
+func metadataForFileBasedInspection(dataDestinationFolder, inspectionID string) (SerializedMetadata, error) {
+	base := inspectionID + ".khi"
+	filePath := filepath.Join(dataDestinationFolder, base)
+	info, err := os.Stat(filePath)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, os.ErrNotExist
+	}
+	return SerializedMetadata{
+		"header": map[string]any{
+			"inspectionType":         "",
+			"inspectionName":         inspectionID,
+			"inspectionTypeIconPath": "",
+			"startTimeUnixSeconds":   int64(0),
+			"endTimeUnixSeconds":     int64(0),
+			"inspectTimeUnixSeconds": int64(0),
+			"suggestedFilename":      base,
+			"fileSize":               int(info.Size()),
+		},
+		"query": []any{},
+		"plan":  map[string]any{"plan": ""},
+		"log":   []any{},
+		"error": map[string]any{"errorMessages": []any{}},
+	}, nil
+}
+
+// openInspectionDataFileRange opens a range of the .khi file for the given inspection ID.
+func openInspectionDataFileRange(dataDestinationFolder, inspectionID string, start, maxLength int64) (io.ReadCloser, int64, error) {
+	filePath := filepath.Join(dataDestinationFolder, inspectionID+".khi")
+	if strings.Contains(inspectionID, "/") {
+		return nil, 0, os.ErrNotExist
+	}
+	info, err := os.Stat(filePath)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, 0, os.ErrNotExist
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, 0, err
+	}
+	fileSize := info.Size()
+	contentLength := min(maxLength, fileSize-start)
+	if contentLength < 0 {
+		contentLength = 0
+	}
+	sectionReader := io.NewSectionReader(f, start, contentLength)
+	return struct {
+		io.Reader
+		io.Closer
+	}{
+		sectionReader,
+		f,
+	}, contentLength, nil
 }

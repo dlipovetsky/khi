@@ -30,9 +30,16 @@
         />
       </div>
     } @else {
-      <div class="title-container">
-        <p class="title" (click)="startEditing()">{{ t.label }}</p>
-        <mat-icon>edit</mat-icon>
+      <div
+        class="title-container"
+        [class.title-container-viewer-mode]="isViewerMode()"
+      >
+        <p class="title" (click)="!isViewerMode() && startEditing()">{{
+          t.label
+        }}</p>
+        @if (!isViewerMode()) {
+          <mat-icon>edit</mat-icon>
+        }
       </div>
     }
     <p class="phase">

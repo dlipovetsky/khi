@@ -71,6 +71,10 @@ $progress-bar-bg-color: dimgray;
       color: dimgray;
     }
   }
+  &.title-container-viewer-mode:hover {
+    cursor: default;
+    background-color: transparent;
+  }
 }
 
 .title-edit {

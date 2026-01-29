@@ -22,8 +22,40 @@
         <mat-icon>edit_off</mat-icon>
         <p>KHI is running as viewer mode</p>
       </div>
-      <p class="description">Open .khi file to view inspection results</p>
+      <p class="description">
+        Select an inspection below to load from the server, or open a .khi file
+        from your device.
+      </p>
     </div>
+    @if (ts === undefined) {
+      <div class="message-container">
+        <p>Loading inspection list</p>
+        <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+      </div>
+    } @else if (ts.length === 0) {
+      <div class="message-container">
+        <div class="icon-message-container">
+          <mat-icon>folder_off</mat-icon>
+          <p>No inspections available on the server</p>
+        </div>
+        <p class="description">
+          Add .khi files to the server data folder or open a .khi file from your
+          device.
+        </p>
+      </div>
+    } @else {
+      @for (t of ts; track t.id) {
+        <khi-task-card-item
+          [task]="t"
+          [isViewerMode]="true"
+          (openInspectionResult)="openInspectionResult.emit($event)"
+          (openInspectionMetadata)="openInspectionMetadata.emit($event)"
+          (cancelInspection)="cancelInspection.emit($event)"
+          (downloadInspectionResult)="downloadInspectionResult.emit($event)"
+          (changeInspectionTitle)="changeInspectionTitle.emit($event)"
+        ></khi-task-card-item>
+      }
+    }
   } @else if (ts === undefined) {
     <div class="message-container">
       <p>Loading task list</p>

@@ -785,11 +785,11 @@ func TestKHIServer_EndpointExistsWithConfigs(t *testing.T) {
 			wantCode:       200,
 		},
 		{
-			name:          "viewer mode shouldn't serve task related endpoints",
+			name:          "viewer mode should serve GET /api/v3/inspection (list from .khi files)",
 			viewerMode:    true,
 			requestMethod: "GET",
 			requestPath:   "/api/v3/inspection",
-			wantCode:      404,
+			wantCode:      200,
 		},
 		{
 			name:           "viewer mode should serve the static resource with custom server base path",

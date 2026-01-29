@@ -173,11 +173,12 @@ func run() int {
 		}
 
 		config := server.ServerConfig{
-			ViewerMode:       *parameters.Server.ViewerMode,
-			StaticFolderPath: *parameters.Server.FrontendAssetFolder,
-			ResourceMonitor:  &server.ResourceMonitorImpl{},
-			ServerBasePath:   *parameters.Server.BasePath,
-			UploadFileStore:  upload.DefaultUploadFileStore,
+			ViewerMode:            *parameters.Server.ViewerMode,
+			StaticFolderPath:      *parameters.Server.FrontendAssetFolder,
+			ResourceMonitor:       &server.ResourceMonitorImpl{},
+			ServerBasePath:        *parameters.Server.BasePath,
+			UploadFileStore:       upload.DefaultUploadFileStore,
+			DataDestinationFolder: ioconfig.DataDestination,
 		}
 		engine, err := server.DefaultServerFactory.CreateInstance(serverMode)
 		if err != nil {

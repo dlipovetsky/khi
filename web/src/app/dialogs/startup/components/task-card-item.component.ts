@@ -74,6 +74,8 @@ export interface InspectionTitleChangeRequest {
 })
 export class TaskCardItemComponent {
   task = input.required<TaskCardItemViewModel>();
+  /** When true (e.g. viewer mode), title editing and cancel are not offered. */
+  isViewerMode = input<boolean>(false);
   titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
 
   constructor() {
