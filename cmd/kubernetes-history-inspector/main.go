@@ -274,6 +274,8 @@ func run() int {
 				exitCh <- 1
 				return
 			}
+			// We have successfully created the KHI file.
+			exitCh <- 0
 		}()
 	}
 	return <-exitCh
