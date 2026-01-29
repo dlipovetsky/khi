@@ -35,6 +35,10 @@ import {
 export interface GetConfigResponse {
   // ViewerMode is a flag indicating if the server is the viewer mode and not accepting creating a new inspection request.
   viewerMode: boolean;
+  /**
+   * When the server was started with --viewer-inspection-id, the frontend should fetch and display this inspection on load.
+   */
+  initialInspectionId?: string;
 }
 
 /**

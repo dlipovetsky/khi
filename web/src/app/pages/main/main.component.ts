@@ -15,7 +15,7 @@
  */
 
 import { Component, inject, OnDestroy, OnInit } from '@angular/core';
-import { BehaviorSubject, Subject, takeUntil } from 'rxjs';
+import { BehaviorSubject, Subject, take, takeUntil } from 'rxjs';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import {
   POPUP_MANAGER,
@@ -42,6 +42,8 @@ import {
   RequestUserActionPopupRequest,
 } from 'src/app/dialogs/request-user-action-popup/request-user-action-popup.component';
 import { NilPopupFormRequest } from 'src/app/services/popup/popup-manager-impl';
+import { BACKEND_API, BackendAPI } from 'src/app/services/api/backend-api-interface';
+import { InspectionDataLoaderService } from 'src/app/services/data-loader.service';
 
 @Component({
   templateUrl: './main.component.html',
@@ -74,15 +76,26 @@ export class AppComponent implements OnInit, OnDestroy {
   );
   readonly notificationManager: NotificationManager =
     inject(NotificationManager);
+  private readonly backendAPI = inject<BackendAPI>(BACKEND_API);
+  private readonly loader = inject(InspectionDataLoaderService);
 
   ngOnInit() {
-    if (!this.extensionStore.tryOpenDataFromURL()) {
-      this.dialog.open(StartupDialogComponent, {
-        maxWidth: '100vw',
-        panelClass: 'startup-modalbox',
-        disableClose: true,
+    this.backendAPI
+      .getConfig()
+      .pipe(take(1))
+      .subscribe((config) => {
+        if (config.initialInspectionId) {
+          this.loader.loadInspectionDataFromBackend(config.initialInspectionId);
+          return;
+        }
+        if (!this.extensionStore.tryOpenDataFromURL()) {
+          this.dialog.open(StartupDialogComponent, {
+            maxWidth: '100vw',
+            panelClass: 'startup-modalbox',
+            disableClose: true,
+          });
+        }
       });
-    }
     // Start monitoring popup request from server
     let lastDialogRef: MatDialogRef<RequestUserActionPopupComponent> | null =
       null;

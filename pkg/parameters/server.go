@@ -21,6 +21,8 @@ var Server *ServerParameters = &ServerParameters{}
 type ServerParameters struct {
 	// ViewerMode limits the KHI feature to query logs with the backend. When it is true, KHI is only serve the frontend to open KHI files.
 	ViewerMode *bool
+	// ViewerInspectionID is the inspection ID to open when in viewer mode. When set, the frontend fetches and displays this inspection on load.
+	ViewerInspectionID *string
 	// Port is the port number where KHI server listens.
 	Port *int
 	// Host is the host address where KHI server serves.
@@ -48,6 +50,7 @@ func (s *ServerParameters) PostProcess() error {
 // Prepare implements ParameterStore.
 func (s *ServerParameters) Prepare() error {
 	s.ViewerMode = flag.Bool("viewer-mode", false, "Limits the KHI feature to query logs with the backend. When it is true, KHI is only serve the frontend to open KHI files.", "KHI_VIEWER_MODE")
+	s.ViewerInspectionID = flag.String("viewer-inspection-id", "", "(Viewer mode only) Inspection ID to open on load. The frontend fetches this inspection from the backend and displays it immediately.", "KHI_VIEWER_INSPECTION_ID")
 	s.Port = flag.Int("port", 8080, "The port number where KHI server listens.", "PORT")
 	s.Host = flag.String("host", "localhost", "The host address where KHI server serves.", "HOST")
 	s.BasePath = flag.String("base-path", "/", "The base address of API endpoints.", "KHI_BASE_PATH")

@@ -20,6 +20,8 @@ import "github.com/GoogleCloudPlatform/khi/pkg/parameters"
 type GetConfigResponse struct {
 	// ViewerMode is a flag indicating if the server is the viewer mode and not accepting creating a new inspection request.
 	ViewerMode bool `json:"viewerMode"`
+	// InitialInspectionID is set when the server was started with --viewer-inspection-id. The frontend should fetch and display this inspection on load.
+	InitialInspectionID string `json:"initialInspectionId,omitempty"`
 }
 
 // NewGetConfigResponseFromParameters returns *GetConfigResponse created from given program parameters.
@@ -28,7 +30,12 @@ func NewGetConfigResponseFromParameters() *GetConfigResponse {
 	if parameters.Server.ViewerMode != nil {
 		isViewerMode = *parameters.Server.ViewerMode
 	}
+	initialInspectionID := ""
+	if parameters.Server.ViewerInspectionID != nil && *parameters.Server.ViewerInspectionID != "" {
+		initialInspectionID = *parameters.Server.ViewerInspectionID
+	}
 	return &GetConfigResponse{
-		ViewerMode: isViewerMode,
+		ViewerMode:         isViewerMode,
+		InitialInspectionID: initialInspectionID,
 	}
 }

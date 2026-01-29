@@ -37,6 +37,7 @@ func TestServerParameters(t *testing.T) {
 			name: "default",
 			want: &ServerParameters{
 				ViewerMode:               testutil.P(false),
+				ViewerInspectionID:       testutil.P(""),
 				Port:                     testutil.P(8080),
 				Host:                     testutil.P("localhost"),
 				BasePath:                 testutil.P("/"),
@@ -53,6 +54,7 @@ func TestServerParameters(t *testing.T) {
 			name: "FrontendResourceBasePath uses BasePath when not set",
 			want: &ServerParameters{
 				ViewerMode:               testutil.P(false),
+				ViewerInspectionID:       testutil.P(""),
 				Port:                     testutil.P(8080),
 				Host:                     testutil.P("localhost"),
 				BasePath:                 testutil.P("/foo/bar/"),
@@ -69,6 +71,7 @@ func TestServerParameters(t *testing.T) {
 			name: "FrontendResourceBasePath should complement the last /",
 			want: &ServerParameters{
 				ViewerMode:               testutil.P(false),
+				ViewerInspectionID:       testutil.P(""),
 				Port:                     testutil.P(8080),
 				Host:                     testutil.P("localhost"),
 				BasePath:                 testutil.P("/foo/bar/"),

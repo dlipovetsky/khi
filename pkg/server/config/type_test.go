@@ -23,22 +23,34 @@ import (
 
 func TestNewGetConfigResponseFromParameters(t *testing.T) {
 	testCases := []struct {
-		name       string
-		viewerMode *bool
-		want       *GetConfigResponse
+		name                string
+		viewerMode          *bool
+		viewerInspectionID  *string
+		want                *GetConfigResponse
 	}{
 		{
-			name:       "viewer mode is nil",
-			viewerMode: nil,
+			name:               "viewer mode is nil",
+			viewerMode:         nil,
+			viewerInspectionID: nil,
 			want: &GetConfigResponse{
 				ViewerMode: false,
 			},
 		},
 		{
-			name:       "viewer mode is true",
-			viewerMode: testutil.P(true),
+			name:               "viewer mode is true",
+			viewerMode:         testutil.P(true),
+			viewerInspectionID: nil,
 			want: &GetConfigResponse{
 				ViewerMode: true,
+			},
+		},
+		{
+			name:               "viewer inspection id is set",
+			viewerMode:         testutil.P(true),
+			viewerInspectionID: testutil.P("my-inspection"),
+			want: &GetConfigResponse{
+				ViewerMode:         true,
+				InitialInspectionID: "my-inspection",
 			},
 		},
 	}
@@ -46,11 +58,14 @@ func TestNewGetConfigResponseFromParameters(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			parameters.Server.ViewerMode = tc.viewerMode
+			parameters.Server.ViewerInspectionID = tc.viewerInspectionID
 			got := NewGetConfigResponseFromParameters()
 			if got.ViewerMode != tc.want.ViewerMode {
-				t.Errorf("NewGetConfigResponseFromParameters() = %v, want %v", got, tc.want)
+				t.Errorf("NewGetConfigResponseFromParameters() ViewerMode = %v, want %v", got.ViewerMode, tc.want.ViewerMode)
+			}
+			if got.InitialInspectionID != tc.want.InitialInspectionID {
+				t.Errorf("NewGetConfigResponseFromParameters() InitialInspectionID = %q, want %q", got.InitialInspectionID, tc.want.InitialInspectionID)
 			}
 		})
-
 	}
 }
