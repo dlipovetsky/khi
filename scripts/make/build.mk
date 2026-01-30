@@ -37,7 +37,7 @@ build-go-debug: khi-debug ## Build backend for debugging
 build: build-go
 
 define build_binary
-	CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go build -ldflags="-s -w -X github.com/GoogleCloudPlatform/khi/pkg/common/constants.VERSION=$(shell cat ./VERSION)" -o ./bin/khi-$(1)-$(2)$(3) ./cmd/kubernetes-history-inspector/...
+	CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go build -ldflags="-s -w -X github.com/GoogleCloudPlatform/khi/pkg/common/constants.VERSION=$(shell cat ./VERSION)" -o ./bin/khi-$(1)_$(2)$(3) ./cmd/kubernetes-history-inspector/...
 endef
 
 .PHONY: build-go-binaries
