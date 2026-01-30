@@ -83,6 +83,11 @@ func main() {
 }
 
 func run() int {
+	if len(os.Args) > 1 && os.Args[1] == "_plugin_commands" {
+		fmt.Println("{}")
+		return 0
+	}
+
 	defer errorreport.CheckAndReportPanic()
 	defer func() {
 		err := coreinit.CallInitExtension(func(e coreinit.InitExtension) error {
